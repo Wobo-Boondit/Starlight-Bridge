@@ -36,6 +36,8 @@ const SessionsSchema = z.object({
 const MCPSchema = z.object({
   server_name: z.string().default("starlight-bridge"),
   cleanup_after_request: z.boolean().default(true),
+  /** Register pin-equivalent tools (weather, reverse_geocode, nearby_search) at startup. */
+  pin_tools: z.boolean().default(true),
 });
 
 /**
@@ -62,7 +64,8 @@ const ConfigSchema = z.object({
   tokens: z.array(TokenSchema).min(1, "At least one token is required"),
   acp_clients: z.array(ACPClientSchema).min(1, "At least one ACP client is required"),
   sessions: SessionsSchema.default({ persist: true, idle_timeout: 300, max_sessions: 10 }),
-  mcp: MCPSchema.default({ server_name: "starlight-bridge", cleanup_after_request: true }),
+  mcp: MCPSchema.default({ server_name: "starlight-bridge", cleanup_after_request: true, pin_tools: true }),
+  // Default passthrough OFF so ACP+MCP tools are available to Hermes.
   passthrough: PassthroughSchema.default({ enabled: false, upstream_url: "http://127.0.0.1:8642", upstream_key: "", strip_tools: true }),
 }).transform((config) => {
   // Pre-sort acp_clients by longest prefix first (for longest-match routing)

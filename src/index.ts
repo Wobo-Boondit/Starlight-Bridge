@@ -3,6 +3,8 @@ import { serve } from "@hono/node-server";
 import { loadConfig } from "./config.js";
 import { createApp } from "./server.js";
 import { closeAll } from "./acp/manager.js";
+import { setTools } from "./mcp/store.js";
+import { buildPinTools } from "./mcp/pin-tools.js";
 import type { Config } from "./config.js";
 
 // ─── Load config ─────────────────────────────────────────────────────
@@ -13,6 +15,13 @@ try {
 } catch (err) {
   console.error((err as Error).message);
   process.exit(1);
+}
+
+// ─── Register pin tools for Hermes MCP ───────────────────────────────
+if (config.mcp.pin_tools) {
+  const pinTools = buildPinTools();
+  setTools(pinTools);
+  console.log(`[starlight] pin tools registered: ${pinTools.map((t) => t.name).join(", ")}`);
 }
 
 // ─── Create app ──────────────────────────────────────────────────────
