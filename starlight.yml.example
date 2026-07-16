@@ -1,0 +1,42 @@
+# Starlight Bridge Configuration
+# Docs: https://github.com/AidanTheBandit/Starlight-Bridge
+
+server:
+  host: "0.0.0.0"
+  port: 7878
+  tls:
+    enabled: false
+    # cert: "/path/to/cert.pem"
+    # key: "/path/to/key.pem"
+
+# Authentication tokens for apps connecting to the bridge
+tokens:
+  - token: "change-me-to-a-random-string"
+    name: "My App"
+    allowed_models:
+      - "*"              # allow all models, or use globs like "hermes-*"
+
+# ACP-compatible agents
+# The model_prefix determines routing: model "hermes-glm-5.2" → prefix "hermes"
+acp_clients:
+  - model_prefix: "hermes"
+    command: "hermes"
+    args: ["acp"]
+    # env:
+    #   HOME: "/home/user"
+    # cwd: "/home/user"
+
+  # - model_prefix: "claude"
+  #   command: "claude"
+  #   args: []
+
+# Session management
+sessions:
+  persist: true
+  idle_timeout: 300
+  max_sessions: 10
+
+# MCP tool registration
+mcp:
+  server_name: "starlight-bridge"
+  cleanup_after_request: true

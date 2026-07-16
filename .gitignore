@@ -111,4 +111,6 @@ dist
 
 # TernJS port file
 .tern-port
-docs/
+
+# Starlight local config (contains tokens)
+starlight.yml
