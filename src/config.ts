@@ -36,8 +36,12 @@ const SessionsSchema = z.object({
 const MCPSchema = z.object({
   server_name: z.string().default("starlight-bridge"),
   cleanup_after_request: z.boolean().default(true),
-  /** Register pin-equivalent tools (weather, reverse_geocode, nearby_search) at startup. */
+  /** Register pin-equivalent tools (weather, reverse_geocode, nearby_search, photos) at startup. */
   pin_tools: z.boolean().default(true),
+  /** Penumbra HTTP base on the pin for photo tools. */
+  pin_base_url: z.string().default("http://penumbra.local:8080"),
+  /** Max base64 chars returned by photo tools (protects context). */
+  photo_max_base64_chars: z.number().default(350_000),
 });
 
 /**
@@ -64,7 +68,13 @@ const ConfigSchema = z.object({
   tokens: z.array(TokenSchema).min(1, "At least one token is required"),
   acp_clients: z.array(ACPClientSchema).min(1, "At least one ACP client is required"),
   sessions: SessionsSchema.default({ persist: true, idle_timeout: 300, max_sessions: 10 }),
-  mcp: MCPSchema.default({ server_name: "starlight-bridge", cleanup_after_request: true, pin_tools: true }),
+  mcp: MCPSchema.default({
+    server_name: "starlight-bridge",
+    cleanup_after_request: true,
+    pin_tools: true,
+    pin_base_url: "http://penumbra.local:8080",
+    photo_max_base64_chars: 350_000,
+  }),
   // Default passthrough OFF so ACP+MCP tools are available to Hermes.
   passthrough: PassthroughSchema.default({ enabled: false, upstream_url: "http://127.0.0.1:8642", upstream_key: "", strip_tools: true }),
 }).transform((config) => {

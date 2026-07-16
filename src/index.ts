@@ -4,7 +4,7 @@ import { loadConfig } from "./config.js";
 import { createApp } from "./server.js";
 import { closeAll } from "./acp/manager.js";
 import { setTools } from "./mcp/store.js";
-import { buildPinTools } from "./mcp/pin-tools.js";
+import { buildPinTools, configurePinTools } from "./mcp/pin-tools.js";
 import type { Config } from "./config.js";
 
 // ─── Load config ─────────────────────────────────────────────────────
@@ -19,9 +19,15 @@ try {
 
 // ─── Register pin tools for Hermes MCP ───────────────────────────────
 if (config.mcp.pin_tools) {
+  configurePinTools({
+    pinBaseUrl: config.mcp.pin_base_url,
+    maxBase64Chars: config.mcp.photo_max_base64_chars,
+  });
   const pinTools = buildPinTools();
   setTools(pinTools);
-  console.log(`[starlight] pin tools registered: ${pinTools.map((t) => t.name).join(", ")}`);
+  console.log(
+    `[starlight] pin tools registered (${config.mcp.pin_base_url}): ${pinTools.map((t) => t.name).join(", ")}`,
+  );
 }
 
 // ─── Create app ──────────────────────────────────────────────────────
