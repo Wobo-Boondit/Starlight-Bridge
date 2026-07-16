@@ -382,59 +382,24 @@ async function listPhotosHandler(args: Record<string, unknown>): Promise<unknown
 }
 
 
-/** Ask the pin to open the camera via deferred-vision protocol.
- *  Returns the sentinel Hermes/Starlight should speak to the pin as the
- *  completion content so penumbra returns UnderstandScene.
- *  Then poll /api/photos/wait for the JPEG base64.
+/**
+ * Ask the Pin to open the camera through Penumbra's deferred-vision protocol.
+ *
+ * This tool is deliberately action-only. It MUST return the sentinel immediately:
+ * waiting here deadlocks because AnalyzeImage cannot happen until this turn ends and
+ * Penumbra converts the sentinel into an UnderstandScene action.
+ *
+ * After capture, the Pin sends AnalyzeImage and then a follow-up Understand request.
+ * Penumbra's LiveImageStore attaches that image to the follow-up LLM turn.
  */
 async function requestPinCameraHandler(args: Record<string, unknown>): Promise<unknown> {
   const question = str(args.question, "What do you see?");
-  const wait = args.wait !== false;
-  const timeoutSecs = Math.min(Math.max(Number(args.timeout_secs ?? 25) || 25, 1), 60);
-
-  // Snapshot generation if wait endpoint exists
-  let afterGeneration = 0;
-  try {
-    const live = await fetchJson(`${pinBaseUrl}/api/photos/live/latest`).catch(() => null) as
-      | { generation?: number }
-      | null;
-    if (live && typeof live.generation === "number") {
-      afterGeneration = live.generation;
-    }
-  } catch {
-    // pin may not have live endpoint yet
-  }
-
-  if (!wait) {
-    return {
-      status: "deferred_vision_requested",
-      question,
-      deferred_vision_marker: "__HUMANE_DEFERRED_VISION__",
-      instructions:
-        "Return ONLY the deferred_vision_marker as your final assistant message so the pin opens the camera. Then call request_pin_camera again with wait=true, or call wait_for_pin_camera.",
-    };
-  }
-
-  // Wait for AnalyzeImage to publish
-  const url =
-    `${pinBaseUrl}/api/photos/wait?timeout_secs=${timeoutSecs}&after_generation=${afterGeneration}`;
-  try {
-    const data = await fetchJson(url);
-    return {
-      status: "captured",
-      question,
-      ...(data as object),
-    };
-  } catch (err) {
-    return {
-      status: "waiting_or_timeout",
-      question,
-      deferred_vision_marker: "__HUMANE_DEFERRED_VISION__",
-      error: (err as Error).message,
-      instructions:
-        "If this is the first call, return ONLY __HUMANE_DEFERRED_VISION__ as the assistant message so the pin triggers UnderstandScene/camera. Then call this tool again to wait for the JPEG.",
-    };
-  }
+  return {
+    status: "deferred_vision_requested",
+    question,
+    deferred_vision_marker: "__HUMANE_DEFERRED_VISION__",
+    instructions: "End this turn with exactly __HUMANE_DEFERRED_VISION__ and no other text.",
+  };
 }
 
 async function waitForPinCameraHandler(args: Record<string, unknown>): Promise<unknown> {
@@ -565,21 +530,13 @@ export function buildPinTools(): RegisteredTool[] {
     {
       name: "request_pin_camera",
       description:
-        "Trigger the Humane AI Pin camera for a live photo. FIRST call usually returns deferred_vision_marker — you MUST end your turn by outputting exactly __HUMANE_DEFERRED_VISION__ so the pin opens the camera. AFTER the pin captures, call again (or wait_for_pin_camera) to receive base64 JPEG. Prefer this over get_latest_pin_photo when the user wants to see something right now.",
+        "Trigger the Humane AI Pin camera for live visual understanding. Call once, then end the turn with exactly the returned deferred_vision_marker. Do not wait or call another tool in this turn. Penumbra will open the camera, receive AnalyzeImage, and provide the image in a follow-up Understand turn.",
       inputSchema: {
         type: "object",
         properties: {
           question: {
             type: "string",
             description: "What to look for / question about the scene.",
-          },
-          wait: {
-            type: "boolean",
-            description: "If true (default), wait up to timeout_secs for the JPEG after capture. If false, only return the deferred-vision instructions.",
-          },
-          timeout_secs: {
-            type: "number",
-            description: "Seconds to wait for capture (default 25, max 60).",
           },
         },
         required: [],
