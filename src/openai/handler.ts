@@ -71,8 +71,12 @@ export async function handleChatCompletions(c: Context, config: Config) {
   }
 
   // ── Create session with MCP server reference ──────────────────────
-  // The ACP agent connects to our /mcp endpoint to discover tools
-  const mcpServers = validTools.length > 0
+  // Always pass the MCP server if there are ANY tools registered (either
+  // from this request or persisted from a previous one). This way the agent
+  // always discovers tools even if the current request didn't include them.
+  const { toolRegistry } = await import("../mcp/store.js");
+  const hasTools = validTools.length > 0 || toolRegistry.size > 0;
+  const mcpServers = hasTools
     ? [{
         name: config.mcp.server_name,
         type: "http" as const,
