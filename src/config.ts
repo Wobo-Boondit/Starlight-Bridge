@@ -38,6 +38,21 @@ const MCPSchema = z.object({
   cleanup_after_request: z.boolean().default(true),
 });
 
+/**
+ * Passthrough mode: proxy requests directly to an LLM API (e.g. Hermes API server)
+ * without spawning an ACP agent. The client (e.g. PenumbraOS rig) handles its own tools.
+ *
+ * When mode is "acp" (default), Starlight spawns ACP agents and runs the full agent loop.
+ * When mode is "passthrough", Starlight proxies to the upstream LLM API directly.
+ */
+const PassthroughSchema = z.object({
+  enabled: z.boolean().default(false),
+  upstream_url: z.string().default("http://127.0.0.1:8642"),
+  upstream_key: z.string().default(""),
+  /** When true, strip tools[] from requests (passthrough clients handle tools locally) */
+  strip_tools: z.boolean().default(true),
+});
+
 const ConfigSchema = z.object({
   server: z.object({
     host: z.string().default("0.0.0.0"),
@@ -48,6 +63,7 @@ const ConfigSchema = z.object({
   acp_clients: z.array(ACPClientSchema).min(1, "At least one ACP client is required"),
   sessions: SessionsSchema.default({ persist: true, idle_timeout: 300, max_sessions: 10 }),
   mcp: MCPSchema.default({ server_name: "starlight-bridge", cleanup_after_request: true }),
+  passthrough: PassthroughSchema.default({ enabled: false, upstream_url: "http://127.0.0.1:8642", upstream_key: "", strip_tools: true }),
 }).transform((config) => {
   // Pre-sort acp_clients by longest prefix first (for longest-match routing)
   config.acp_clients.sort((a, b) => b.model_prefix.length - a.model_prefix.length);

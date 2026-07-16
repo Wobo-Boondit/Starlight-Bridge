@@ -6,6 +6,7 @@ import { createSession, markBusy, markIdle } from "../acp/manager.js";
 import { setTools } from "../mcp/store.js";
 import type { OpenAIRequest, OpenAIResponse, OpenAIError, OpenAITool } from "./types.js";
 import { streamACPToOpenAI } from "./stream.js";
+import { passthrough } from "./passthrough.js";
 
 function errorResponse(c: Context, status: number, message: string, type: string) {
   const body: OpenAIError = { error: { message, type } };
@@ -39,6 +40,12 @@ export async function handleChatCompletions(c: Context, config: Config) {
     return errorResponse(c, 403, `Token not authorized for model: ${body.model}`, "model_forbidden");
   }
 
+  // ── Passthrough mode: proxy straight to upstream LLM API ──────────
+  if (config.passthrough.enabled) {
+    return passthrough(c, config);
+  }
+
+  // ── ACP mode: spawn agent, register MCP tools ─────────────────────
   const acpClient = resolveACPClient(config, body.model);
   if (!acpClient) {
     return errorResponse(c, 404, `No ACP client for model: ${body.model}`, "no_backend");
@@ -46,8 +53,7 @@ export async function handleChatCompletions(c: Context, config: Config) {
 
   const agentModel = stripPrefix(body.model, acpClient.model_prefix);
 
-  // ── Register tools as MCP server ──────────────────────────────────
-  // Validate and convert OpenAI tools to MCP tool registry
+  // Register tools as MCP
   const validTools: OpenAITool[] = Array.isArray(body.tools)
     ? body.tools.filter(
         (t): t is OpenAITool =>
@@ -70,10 +76,7 @@ export async function handleChatCompletions(c: Context, config: Config) {
     );
   }
 
-  // ── Create session with MCP server reference ──────────────────────
-  // Always pass the MCP server if there are ANY tools registered (either
-  // from this request or persisted from a previous one). This way the agent
-  // always discovers tools even if the current request didn't include them.
+  // Always pass MCP server if tools exist
   const { toolRegistry } = await import("../mcp/store.js");
   const hasTools = validTools.length > 0 || toolRegistry.size > 0;
   const mcpServers = hasTools
