@@ -8,6 +8,9 @@ import type { OpenAIRequest, OpenAIResponse, OpenAIError, OpenAITool } from "./t
 import { streamACPToOpenAI } from "./stream.js";
 import { passthrough } from "./passthrough.js";
 
+/** Must match penumbra dumb_backend DEFERRED_VISION_MARKER */
+const DEFERRED_VISION_MARKER = "__HUMANE_DEFERRED_VISION__";
+
 function errorResponse(c: Context, status: number, message: string, type: string) {
   const body: OpenAIError = { error: { message, type } };
   return c.json(body, status as 400 | 401 | 403 | 404 | 500);
@@ -111,9 +114,15 @@ export async function handleChatCompletions(c: Context, config: Config) {
 
   markBusy(acpClient.model_prefix);
   try {
-    const responseText = await session.prompt(lastUser.content);
+    let responseText = await session.prompt(lastUser.content);
     if (config.mcp.cleanup_after_request) {
       await session.dispose().catch(() => {});
+    }
+
+    // If Hermes decided the pin needs the camera, collapse to the exact sentinel
+    // penumbra dumb mode maps to ChatResult::DeferredVision → UnderstandScene action.
+    if (responseText.includes(DEFERRED_VISION_MARKER)) {
+      responseText = DEFERRED_VISION_MARKER;
     }
 
     const response: OpenAIResponse = {
