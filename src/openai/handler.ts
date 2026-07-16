@@ -3,7 +3,8 @@ import type { Config } from "../config.js";
 import { validateToken, isModelAllowed } from "../auth.js";
 import { resolveACPClient, stripPrefix } from "../router.js";
 import { createSession, markBusy, markIdle } from "../acp/manager.js";
-import type { OpenAIRequest, OpenAIResponse, OpenAIError } from "./types.js";
+import { setTools } from "../mcp/store.js";
+import type { OpenAIRequest, OpenAIResponse, OpenAIError, OpenAITool } from "./types.js";
 import { streamACPToOpenAI } from "./stream.js";
 
 function errorResponse(c: Context, status: number, message: string, type: string) {
@@ -45,9 +46,44 @@ export async function handleChatCompletions(c: Context, config: Config) {
 
   const agentModel = stripPrefix(body.model, acpClient.model_prefix);
 
+  // ── Register tools as MCP server ──────────────────────────────────
+  // Validate and convert OpenAI tools to MCP tool registry
+  const validTools: OpenAITool[] = Array.isArray(body.tools)
+    ? body.tools.filter(
+        (t): t is OpenAITool =>
+          t != null &&
+          typeof t === "object" &&
+          t.type === "function" &&
+          t.function != null &&
+          typeof t.function.name === "string" &&
+          t.function.name.length > 0,
+      )
+    : [];
+
+  if (validTools.length > 0) {
+    setTools(
+      validTools.map((t) => ({
+        name: t.function.name,
+        description: t.function.description ?? "",
+        inputSchema: t.function.parameters ?? { type: "object", properties: {} },
+      })),
+    );
+  }
+
+  // ── Create session with MCP server reference ──────────────────────
+  // The ACP agent connects to our /mcp endpoint to discover tools
+  const mcpServers = validTools.length > 0
+    ? [{
+        name: config.mcp.server_name,
+        type: "http" as const,
+        url: `http://127.0.0.1:${config.server.port}/mcp`,
+        headers: [],
+      }]
+    : [];
+
   let session;
   try {
-    session = await createSession(acpClient, process.cwd(), []);
+    session = await createSession(acpClient, process.cwd(), mcpServers);
     if (agentModel && agentModel !== "default") {
       await session.setModel(agentModel).catch(() => {});
     }
