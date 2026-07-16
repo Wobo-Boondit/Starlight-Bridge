@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Bridge any ACP-compatible agent to the OpenAI API with dynamic MCP tool registration",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "bin": {
     "starlight": "./dist/index.js"
   },
