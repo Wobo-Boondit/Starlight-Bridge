@@ -87,4 +87,24 @@ describe("tryRapid", () => {
     const decision = await tryRapid(simpleBody, baseConfig(), fetchImpl as unknown as typeof fetch);
     expect(decision.kind).toBe("escalate");
   });
+
+  it("escalates technical prompts before calling the fast model", async () => {
+    const fetchImpl = vi.fn(async () => new Response("should not be called", { status: 500 }));
+    const decision = await tryRapid({
+      model: "hermes-default",
+      messages: [{ role: "user", content: "Debug this TypeScript stacktrace and patch the bug" }],
+    }, baseConfig(), fetchImpl as unknown as typeof fetch);
+    expect(decision).toEqual({ kind: "escalate", reason: "coding" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("escalates device/tool prompts before calling the fast model", async () => {
+    const fetchImpl = vi.fn(async () => new Response("should not be called", { status: 500 }));
+    const decision = await tryRapid({
+      model: "hermes-default",
+      messages: [{ role: "user", content: "What is the weather near me right now?" }],
+    }, baseConfig(), fetchImpl as unknown as typeof fetch);
+    expect(decision).toEqual({ kind: "escalate", reason: "live_location_data" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });

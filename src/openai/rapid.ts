@@ -49,6 +49,36 @@ function hasNonTextUserContent(messages: OpenAIRequest["messages"]): boolean {
   });
 }
 
+/** Heuristic: technical / toolful prompts should skip rapid and go straight to ACP. */
+export function shouldEscalateToAgent(text: string): string | null {
+  const t = text.toLowerCase();
+  if (!t.trim()) return null;
+
+  const patterns: Array<[RegExp, string]> = [
+    // Device / pin / camera / tools
+    [/\b(camera|photo|picture|look at|what do you see|see in front|scan|barcode)\b/, "vision_or_camera"],
+    [/\b(weather|forecast|temperature outside|nearby|directions|navigate|maps?)\b/, "live_location_data"],
+    [/\b(wifi|cellular|battery|pin|device status|toggle)\b/, "device_control"],
+    // Coding / technical
+    [/\b(code|coding|debug|debugger|stacktrace|stack trace|exception|segfault|compile|compiler)\b/, "coding"],
+    [/\b(typescript|javascript|python|rust|kotlin|java|golang|c\+\+|sql|regex)\b/, "programming_language"],
+    [/\b(function|class |import |export |const |let |var |async |await |promise|api endpoint)\b/, "code_syntax"],
+    [/\b(git|github|pull request|merge conflict|dockerfile|kubernetes|k8s|helm|terraform)\b/, "devops"],
+    [/\b(ssh|server|deploy|deployment|systemd|nginx|docker|container|ci\/cd)\b/, "infra"],
+    [/\b(reverse engineer|decompile|frida|selinux|protobuf|grpc|json-rpc|mcp|acp)\b/, "systems_engineering"],
+    [/\b(config|configuration|yaml|toml|json schema|env var|environment variable)\b/, "config_work"],
+    [/\b(implement|refactor|patch|fix the bug|write a script|unit test|integration test)\b/, "engineering_task"],
+    // Multi-step / research
+    [/\b(browse|search the web|look up|research|scrape|crawl)\b/, "browsing"],
+    [/\b(step by step|multi-?step|plan out|architecture|design a system)\b/, "multi_step"],
+  ];
+
+  for (const [re, reason] of patterns) {
+    if (re.test(t)) return reason;
+  }
+  return null;
+}
+
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "").replace(/\/v1\/chat\/completions$/i, "");
 }
@@ -62,7 +92,18 @@ function buildRapidMessages(body: OpenAIRequest, systemPrompt: string): OpenAIMe
       continue;
     }
     if (msg.role === "assistant" || msg.role === "user") {
-      // Rapid mode is text-only. Drop tool/function messages and non-text parts.
+      // Pass text; for user turns also pass image_url parts so rapid can do vision Q&A.
+      if (msg.role === "user" && Array.isArray(msg.content)) {
+        const parts = msg.content.filter(
+          (part) =>
+            (part.type === "text" && typeof part.text === "string") ||
+            part.type === "image_url",
+        );
+        if (parts.length > 0) {
+          out.push({ role: "user", content: parts as OpenAIMessage["content"] });
+          continue;
+        }
+      }
       const text = textFromContent(msg.content);
       if (text.trim()) out.push({ role: msg.role, content: text });
     }
@@ -90,11 +131,23 @@ export async function tryRapid(
   if (Array.isArray(body.tools) && body.tools.length > 0) {
     return { kind: "skip", reason: "client_tools_present" };
   }
-  if (hasNonTextUserContent(body.messages)) {
-    return { kind: "skip", reason: "non_text_content" };
+  // Multimodal content is allowed for vision Q&A (rapid model may answer from images).
+  // Non-text non-image parts still skip.
+  const hasUnsupportedParts = body.messages.some((msg) => {
+    if (msg.role !== "user" || typeof msg.content === "string" || msg.content == null) return false;
+    return msg.content.some((part) => part.type !== "text" && part.type !== "image_url");
+  });
+  if (hasUnsupportedParts) {
+    return { kind: "skip", reason: "unsupported_content" };
   }
-  if (!lastUserText(body.messages)) {
+  const userText = lastUserText(body.messages);
+  if (!userText && !hasNonTextUserContent(body.messages)) {
     return { kind: "skip", reason: "empty_user_message" };
+  }
+  // Deterministic escalate for technical / toolful requests before calling the fast model.
+  if (userText) {
+    const reason = shouldEscalateToAgent(userText);
+    if (reason) return { kind: "escalate", reason };
   }
 
   const escalateTool = rapid.escalate_tool || "escalate_to_agent";
@@ -122,7 +175,7 @@ export async function tryRapid(
             function: {
               name: escalateTool,
               description:
-                "Hand this request to the full agent path. Call when tools, device access, current data, multi-step work, or uncertainty is required.",
+                "Hand this request to the full agent path (Hermes/ACP). MUST call for technical work, tools, device/pin control, live data, coding, infra, multi-step tasks, or uncertainty. Rapid is only for general Q&A and vision.",
               parameters: {
                 type: "object",
                 properties: {
