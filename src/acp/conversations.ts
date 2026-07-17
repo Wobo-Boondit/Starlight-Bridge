@@ -59,7 +59,10 @@ export class ConversationRegistry<T extends DisposableSession> {
     }
 
     const inFlight = this.pending.get(options.key);
-    if (inFlight) return inFlight;
+    if (inFlight) {
+      await inFlight;
+      return this.acquire(options);
+    }
 
     const acquisition = this.createEntry(options, existing, Boolean(instructionsChanged));
     this.pending.set(options.key, acquisition);

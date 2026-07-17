@@ -141,7 +141,31 @@ describe("ConversationRegistry", () => {
 
     const [a, b] = await Promise.all([first, second]);
     expect(a.session).toBe(b.session);
+    expect(a.reused).toBe(false);
+    expect(b.reused).toBe(true);
     expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("serializes concurrent acquisitions with different instruction fingerprints", async () => {
+    const registry = new ConversationRegistry<FakeSession>();
+    const disposed: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let next = 0;
+    const create = vi.fn(async () => {
+      if (next === 0) await gate;
+      return fakeSession(String(++next), disposed);
+    });
+
+    const first = registry.acquire({ key: "same", fingerprint: "a", create });
+    const second = registry.acquire({ key: "same", fingerprint: "b", create });
+    release();
+
+    const [a, b] = await Promise.all([first, second]);
+    expect(a.session).not.toBe(b.session);
+    expect(b.reused).toBe(false);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(disposed).toEqual(["1"]);
   });
 
   it("rotates and disposes a session when instructions change", async () => {
