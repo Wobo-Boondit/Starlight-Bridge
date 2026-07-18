@@ -49,23 +49,28 @@ function hasNonTextUserContent(messages: OpenAIRequest["messages"]): boolean {
   });
 }
 
-/** Heuristic: technical / toolful prompts should skip rapid and go straight to ACP. */
+/** Heuristic: technical / toolful / live-status prompts skip rapid and go to ACP. */
 export function shouldEscalateToAgent(text: string): string | null {
   const t = text.toLowerCase();
   if (!t.trim()) return null;
 
+  // Product-neutral only. No hostnames, nicknames, or vendor facts.
   const patterns: Array<[RegExp, string]> = [
-    // Device / pin / camera / tools
+    // Live status the fast model cannot know
+    [/\b(how many (people|players|users)|player count|online (now|right now)|server status|is (the )?server (up|down|online)|who('s| is) (on|online))\b/, "live_status"],
+    // Device / camera / connectivity control
     [/\b(camera|photo|picture|look at|what do you see|see in front|scan|barcode)\b/, "vision_or_camera"],
-    [/\b(weather|forecast|temperature outside|nearby|directions|navigate|maps?)\b/, "live_location_data"],
-    [/\b(wifi|cellular|battery|pin|device status|toggle)\b/, "device_control"],
+    [/\b(nearby|directions|navigate|maps?)\b/, "live_location_data"],
+    [/\b(wifi|cellular|battery|device status|toggle (wifi|cellular))\b/, "device_control"],
     // Coding / technical
     [/\b(code|coding|debug|debugger|stacktrace|stack trace|exception|segfault|compile|compiler)\b/, "coding"],
     [/\b(typescript|javascript|python|rust|kotlin|java|golang|c\+\+|sql|regex)\b/, "programming_language"],
     [/\b(function|class |import |export |const |let |var |async |await |promise|api endpoint)\b/, "code_syntax"],
     [/\b(git|github|pull request|merge conflict|dockerfile|kubernetes|k8s|helm|terraform)\b/, "devops"],
-    [/\b(ssh|server|deploy|deployment|systemd|nginx|docker|container|ci\/cd)\b/, "infra"],
-    [/\b(reverse engineer|decompile|frida|selinux|protobuf|grpc|json-rpc|mcp|acp)\b/, "systems_engineering"],
+    // Servers / infra
+    [/\b(servers?|vps|hosting|datacenter|data center|rack|uptime|latency|bandwidth)\b/, "servers"],
+    [/\b(ssh|deploy|deployment|systemd|nginx|apache|caddy|docker|container|ci\/cd|firewall|iptables|selinux)\b/, "infra"],
+    [/\b(reverse engineer|decompile|frida|protobuf|grpc|json-rpc|mcp|acp)\b/, "systems_engineering"],
     [/\b(config|configuration|yaml|toml|json schema|env var|environment variable)\b/, "config_work"],
     [/\b(implement|refactor|patch|fix the bug|write a script|unit test|integration test)\b/, "engineering_task"],
     // Multi-step / research

@@ -27,6 +27,10 @@ function baseConfig(overrides: Partial<Config["rapid"]> = {}): Config {
       system_prompt: "fast path",
       ...overrides,
     },
+  response: {
+    strip_markdown: false,
+  },
+
   } as Config;
 }
 
@@ -102,9 +106,42 @@ describe("tryRapid", () => {
     const fetchImpl = vi.fn(async () => new Response("should not be called", { status: 500 }));
     const decision = await tryRapid({
       model: "hermes-default",
-      messages: [{ role: "user", content: "What is the weather near me right now?" }],
+      messages: [{ role: "user", content: "Navigate me nearby to a coffee shop" }],
     }, baseConfig(), fetchImpl as unknown as typeof fetch);
     expect(decision).toEqual({ kind: "escalate", reason: "live_location_data" });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("escalates live status prompts before calling the fast model", async () => {
+    const fetchImpl = vi.fn(async () => new Response("should not be called", { status: 500 }));
+    const decision = await tryRapid({
+      model: "hermes-default",
+      messages: [{ role: "user", content: "How many people are on the minecraft server?" }],
+    }, baseConfig(), fetchImpl as unknown as typeof fetch);
+    expect(decision).toEqual({ kind: "escalate", reason: "live_status" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("escalates server questions before calling the fast model", async () => {
+    const fetchImpl = vi.fn(async () => new Response("should not be called", { status: 500 }));
+    const decision = await tryRapid({
+      model: "hermes-default",
+      messages: [{ role: "user", content: "How are my servers doing?" }],
+    }, baseConfig(), fetchImpl as unknown as typeof fetch);
+    expect(decision).toEqual({ kind: "escalate", reason: "servers" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("does not pre-escalate plain weather questions", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      model: "gemini-3-flash-preview",
+      choices: [{ message: { role: "assistant", content: "Sunny, about 72F." }, finish_reason: "stop" }],
+    }), { status: 200 }));
+    const decision = await tryRapid({
+      model: "hermes-default",
+      messages: [{ role: "user", content: "What's the weather like today?" }],
+    }, baseConfig(), fetchImpl as unknown as typeof fetch);
+    expect(decision).toEqual({ kind: "answer", content: "Sunny, about 72F.", model: "gemini-3-flash-preview" });
+    expect(fetchImpl).toHaveBeenCalledOnce();
   });
 });

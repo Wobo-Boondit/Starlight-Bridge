@@ -65,16 +65,20 @@ const PassthroughSchema = z.object({
  * Starlight falls through to the normal ACP path. Disabled by default so generic
  * installs stay ACP-only.
  *
- * Intended scope: general Q&A and vision only. Technical, tool, device, coding,
- * browsing, and multi-step work must escalate to ACP.
+ * Intended scope: general Q&A, casual chat, weather, and vision only.
+ * Live status, tools, device control, coding, and multi-step work escalate to ACP.
+ * Keep this prompt product-neutral — no hostnames, devices, or vendor facts.
  */
-const DEFAULT_RAPID_SYSTEM_PROMPT =
-  "You are the RAPID path: a fast model for general Q&A and vision only. " +
-  "You may answer simple factual questions, short explanations, casual chat, math/unit conversions you know, and describe images when provided. " +
-  "You do NOT have tools, device access, browsing, code execution, MCP, pin/camera control, weather APIs, maps, files, shell, git, or multi-step planning. " +
-  "If the request is technical (coding, debugging, infrastructure, reverse engineering, configs, deployments, APIs, protocols), " +
-  "needs tools/device control/live data, involves multi-step work, or you are unsure, you MUST call escalate_to_agent with a short reason. " +
-  "Prefer escalate_to_agent over guessing. Never invent tool results or device state.";
+const DEFAULT_RAPID_SYSTEM_PROMPT = [
+  "You are RAPID, the optional fast path in front of a full agent.",
+  "Your job is only: general Q&A, casual conversation, simple explanations, weather from knowledge, quick math/unit conversion, and vision when an image is provided.",
+  "",
+  "You are NOT the full agent. You have no tools, no device control, no browsing, no code execution, no files, no shell, no MCP, and no private infrastructure knowledge.",
+  "You must not invent live status (player counts, server health, device state, weather station readings) or pretend you looked something up.",
+  "",
+  "When the user needs anything beyond your narrow scope — live/private status, tools, devices, maps navigation, coding, debugging, infrastructure, configs, multi-step work, or you are unsure — call escalate_to_agent with a short reason.",
+  "Prefer escalate_to_agent over guessing. Keep answers short and plain when you do answer.",
+].join(" ");
 
 const RapidSchema = z.object({
   enabled: z.boolean().default(false),
@@ -89,10 +93,16 @@ const RapidSchema = z.object({
   /** Request timeout in ms for the rapid call. */
   timeout_ms: z.number().default(12_000),
   /**
-   * Extra system instruction describing rapid-mode limits.
-   * Keep product-specific wording out of core defaults.
+   * System instruction that teaches the rapid model its limits.
+   * Override in config for voice/tone; keep product facts out of the bridge.
    */
   system_prompt: z.string().default(DEFAULT_RAPID_SYSTEM_PROMPT),
+});
+
+/** Response shaping for clients that cannot render markdown (e.g. wearables). */
+const ResponseSchema = z.object({
+  /** Strip common markdown markers from assistant text when true. Default false. */
+  strip_markdown: z.boolean().default(false),
 });
 
 const ConfigSchema = z.object({
@@ -122,6 +132,7 @@ const ConfigSchema = z.object({
     timeout_ms: 12_000,
     system_prompt: DEFAULT_RAPID_SYSTEM_PROMPT,
   }),
+  response: ResponseSchema.default({ strip_markdown: false }),
 }).transform((config) => {
   // Pre-sort acp_clients by longest prefix first (for longest-match routing)
   config.acp_clients.sort((a, b) => b.model_prefix.length - a.model_prefix.length);
