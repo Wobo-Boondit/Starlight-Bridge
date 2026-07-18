@@ -10,6 +10,7 @@ import {
   clearScopedTools,
   setScopedTools,
   toolRegistry,
+  getToolsForScope,
   type RegisteredTool,
 } from "../mcp/store.js";
 import type { OpenAIRequest, OpenAIResponse, OpenAIError, OpenAITool } from "./types.js";
@@ -91,11 +92,20 @@ export async function handleChatCompletions(c: Context, config: Config) {
 
   if (config.passthrough.enabled) return passthrough(c, config);
 
+  // Rapid may directly execute configured, generic MCP tools for simple requests.
+  // Client-supplied tools still belong to ACP because they are request-scoped.
+  const rapidRegisteredTools = Array.from(getToolsForScope().values());
+  const executeRapidTool = async (name: string, args: Record<string, unknown>) => {
+    const tool = rapidRegisteredTools.find((candidate) => candidate.name === name);
+    if (!tool?.handler) throw new Error(`Tool "${name}" is unavailable`);
+    return tool.handler(args);
+  };
+
   // Rapid path: fast OpenAI-compatible model answers simple prompts immediately.
   // On escalate/skip/error we fall through to the normal ACP agent path.
   // Streaming requests always use ACP so tool/agent turns remain stream-compatible.
   if (config.rapid?.enabled && !body.stream) {
-    const rapid = await tryRapid(body, config);
+    const rapid = await tryRapid(body, config, fetch, rapidRegisteredTools, executeRapidTool);
     if (rapid.kind === "answer") {
       console.log(`[rapid] answered model=${rapid.model}`);
       const content = maybeStripMarkdown(rapid.content, config.response?.strip_markdown);
